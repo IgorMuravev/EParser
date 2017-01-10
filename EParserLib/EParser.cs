@@ -1,18 +1,61 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
 
 namespace EParserLib
 {
+    public class EParserSettings
+    {
+        public Dictionary<string, Func<double, double>> funcs;
+        public Dictionary<string, Func<double, double, double>> binOperators;
+        public Dictionary<string, Func<double, double>> unOperators;
+
+        public static EParserSettings Default
+        {
+            get
+            {
+                return new EParserSettings()
+                {
+                    funcs = new Dictionary<string, Func<double, double>>()
+                    {
+                        { "SIN", new Func<double, double>(x=>Math.Sin(x)) },
+                        { "COS", new Func<double, double>(x=>Math.Cos(x)) },
+                        { "LN", new Func<double, double>(x=>Math.Log(x)) },
+                        { "EXP", new Func<double, double>(x=>Math.Exp(x)) },
+                    },
+
+                    binOperators = new Dictionary<string, Func<double, double, double>>()
+                    {
+                        {"+", new Func<double, double, double>((a,b)=> a + b)},
+                        {"-", new Func<double, double, double>((a,b)=> a - b)},
+                        {"*", new Func<double, double, double>((a,b)=> a * b)},
+                        {"/", new Func<double, double, double>((a,b)=> a / b)},
+                        {"^", new Func<double, double, double>((a,b)=> Math.Pow(a,b))},
+                    },
+
+                    unOperators = new Dictionary<string, Func<double, double>>()
+                    {
+                        { "-", new Func<double, double>(x=>-x) },
+                        { "+", new Func<double, double>(x=>+x) },
+                    }
+                };
+            }
+        }
+    }
+
     public class EParser
     {
-        private List<string> functionList = new List<string>() { "SIN", "COS", "LN", "E" };
-        private List<string> binOperations = new List<string>() { "+", "-", "/", "*", "^" };
-        private List<string> unarOperations = new List<string>() { "+", "-" };
+        private EParserSettings settings;
         private List<string> special = new List<string>() { "(", ")" };
         private List<string> variables = new List<string>();
 
+        private EParser()
+        {
+            for (int i = 65; i < 91; i++)
+                variables.Add(((char)i).ToString());
+        }
         private int GetPriority(Term t)
         {
             if (t.Type == TermType.Function) return 100;
@@ -46,17 +89,15 @@ namespace EParserLib
         private string sourceExp;
         private List<Term> tree = new List<Term>();
         private Dictionary<string, double> vars = new Dictionary<string, double>();
-
         private bool IsLexem(string str)
         {
             double buf;
             if (Double.TryParse(str, out buf))
                 return true;
-            if (functionList.Contains(str))
+            if (settings.funcs.ContainsKey(str))
                 return true;
             if (variables.Contains(str))
                 return true;
-
 
             return false;
         }
@@ -66,7 +107,7 @@ namespace EParserLib
             for (int i = index; i < exp.Length; i++)
             {
                 readedLexem += exp[i];
-                if (binOperations.Contains(readedLexem) || unarOperations.Contains(readedLexem) || special.Contains(readedLexem))
+                if (settings.binOperators.ContainsKey(readedLexem) || settings.unOperators.ContainsKey(readedLexem) || special.Contains(readedLexem))
                 {
                     newIndex = i + 1;
                     return readedLexem;
@@ -74,7 +115,7 @@ namespace EParserLib
                 if (!IsLexem(readedLexem))
                 {
                     var flag = true;
-                    foreach (var f in functionList)
+                    foreach (var f in settings.funcs.Keys)
                     {
                         if (f.Contains(readedLexem))
                             flag = false;
@@ -113,7 +154,7 @@ namespace EParserLib
             double buf;
             for (int i = 0; i < lexems.Count; i++)
             {
-                if (functionList.Contains(lexems[i]))
+                if (settings.funcs.ContainsKey(lexems[i]))
                 {
                     result.Add(new Term() { Source = lexems[i], Type = TermType.Function });
                 }
@@ -133,7 +174,7 @@ namespace EParserLib
                 {
                     result.Add(new Term() { Source = lexems[i], Type = TermType.CloseBracket });
                 }
-                else if (binOperations.Contains(lexems[i]))
+                else if (settings.binOperators.ContainsKey(lexems[i]))
                 {
                     if (i == 0)
                         result.Add(new Term() { Source = lexems[i], Type = TermType.UnarOperation });
@@ -203,6 +244,7 @@ namespace EParserLib
 
             tree = result;
         }
+
         public double this[string var]
         {
             get
@@ -231,15 +273,14 @@ namespace EParserLib
         {
             get { return String.Join(" ", tree.Select(x => x.Source)); }
         }
-        private EParser()
-        {
-            for (int i = 65; i < 91; i++)
-                variables.Add(((char)i).ToString());
-            sourceExp = String.Empty;
-        }
-        public EParser(string exp) : this()
+
+        public EParser(string exp, EParserSettings s = null) : this()
         {
             sourceExp = exp;
+            if (s == null)
+                settings = EParserSettings.Default;
+            else
+                settings = s;
             Parse();
         }
         public double Calculate()
@@ -259,61 +300,21 @@ namespace EParserLib
                 {
                     var p1 = stack.Pop();
                     var p2 = stack.Pop();
-
-                    switch (tree[i].Source)
-                    {
-                        case "+":
-                            stack.Push(p2 + p1);
-                            break;
-                        case "-":
-                            stack.Push(p2 - p1);
-                            break;
-                        case "/":
-                            stack.Push(p2 / p1);
-                            break;
-                        case "*":
-                            stack.Push(p2 * p1);
-                            break;
-                        case "^":
-                            stack.Push(Math.Pow(p2, p1));
-                            break;
-                    }
+                    stack.Push(settings.binOperators[tree[i].Source](p2, p1));
                 }
                 else if (tree[i].Type == TermType.UnarOperation)
                 {
                     var p1 = stack.Pop();
-
-                    switch (tree[i].Source)
-                    {
-                        case "+":
-                            stack.Push(+p1);
-                            break;
-                        case "-":
-                            stack.Push(-p1);
-                            break;
-                    }
+                    stack.Push(settings.unOperators[tree[i].Source](p1));
                 }
                 else if (tree[i].Type == TermType.Function)
                 {
                     var p1 = stack.Pop();
-                    switch (tree[i].Source)
-                    {
-                        case "SIN":
-                            stack.Push(Math.Sin(p1));
-                            break;
-                        case "COS":
-                            stack.Push(Math.Cos(p1));
-                            break;
-                        case "LN":
-                            stack.Push(Math.Log(p1));
-                            break;
-                        case "E":
-                            stack.Push(Math.Exp(p1));
-                            break;
-                    }
+                    stack.Push(settings.funcs[tree[i].Source](p1));
                 }
             }
             return stack.Pop();
         }
+
     }
 }
