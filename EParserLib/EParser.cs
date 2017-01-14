@@ -1,17 +1,30 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Text;
 
 namespace EParserLib
 {
+    /// <summary>
+    /// Настройки для парсера
+    /// </summary>
     public class EParserSettings
     {
+        /// <summary>
+        /// Словарь: имя функции - делегат
+        /// </summary>
         public Dictionary<string, Func<double, double>> funcs;
+        /// <summary>
+        /// Словарь: бинарная операция - делегат
+        /// </summary>
         public Dictionary<string, Func<double, double, double>> binOperators;
+        /// <summary>
+        /// Словарь: унарная - делегат
+        /// </summary>
         public Dictionary<string, Func<double, double>> unOperators;
 
+        /// <summary>
+        /// Стандартные настройки
+        /// </summary>
         public static EParserSettings Default
         {
             get
@@ -45,17 +58,59 @@ namespace EParserLib
         }
     }
 
+    /// <summary>
+    /// Класс для вычисления строкового выражения
+    /// </summary>
     public class EParser
     {
+        /// <summary>
+        /// Настройки
+        /// </summary>
         private EParserSettings settings;
+        /// <summary>
+        /// Специальные символы
+        /// </summary>
         private List<string> special = new List<string>() { "(", ")" };
+        /// <summary>
+        /// Список переменых
+        /// </summary>
         private List<string> variables = new List<string>();
+        /// <summary>
+        /// Исходное строковое выражение
+        /// </summary>
+        private string sourceExp;
 
-        private EParser()
+        /// <summary>
+        /// Полученное дерево выражения
+        /// </summary>
+        private List<Term> tree = new List<Term>();
+
+        /// <summary>
+        /// Словарь, хранящий список значений переменных
+        /// </summary>
+        private Dictionary<string, double> vars = new Dictionary<string, double>();
+
+        /// <summary>
+        /// Перечисление - тип терма
+        /// </summary>
+        private enum TermType { Variable, Function, OpenBracket, CloseBracket, Number, BinOperation, UnarOperation }
+        /// <summary>
+        /// СТруктура - терм и его тип
+        /// </summary>
+        private struct Term
         {
-            for (int i = 65; i < 91; i++)
-                variables.Add(((char)i).ToString());
+            public string Source;
+            public TermType Type;
+            public override string ToString()
+            {
+                return Source + " " + Type.ToString();
+            }
         }
+        /// <summary>
+        /// Получить приоритет терма
+        /// </summary>
+        /// <param name="t"></param>
+        /// <returns></returns>
         private int GetPriority(Term t)
         {
             if (t.Type == TermType.Function) return 100;
@@ -76,20 +131,13 @@ namespace EParserLib
             }
             return 0;
         }
-        private enum TermType { Variable, Function, OpenBracket, CloseBracket, Number, BinOperation, UnarOperation }
-        private struct Term
-        {
-            public string Source;
-            public TermType Type;
-            public override string ToString()
-            {
-                return Source + " " + Type.ToString();
-            }
-        }
-        private string sourceExp;
-        private List<Term> tree = new List<Term>();
-        private Dictionary<string, double> vars = new Dictionary<string, double>();
-        private bool IsLexem(string str)
+
+        /// <summary>
+        /// Является ли строка числов функцией или переменной
+        /// </summary>
+        /// <param name="str"></param>
+        /// <returns></returns>
+        private bool IsNumberOrFuncOrVar(string str)
         {
             double buf;
             if (Double.TryParse(str, out buf))
@@ -101,6 +149,13 @@ namespace EParserLib
 
             return false;
         }
+        /// <summary>
+        /// ПОлучение лексемы из строки
+        /// </summary>
+        /// <param name="exp"></param>
+        /// <param name="index"></param>
+        /// <param name="newIndex"></param>
+        /// <returns></returns>
         private string GetLexem(string exp, int index, out int newIndex)
         {
             var readedLexem = String.Empty;
@@ -112,7 +167,7 @@ namespace EParserLib
                     newIndex = i + 1;
                     return readedLexem;
                 }
-                if (!IsLexem(readedLexem))
+                if (!IsNumberOrFuncOrVar(readedLexem))
                 {
                     var flag = true;
                     foreach (var f in settings.funcs.Keys)
@@ -123,11 +178,13 @@ namespace EParserLib
                     if (flag)
                     {
                         newIndex = i;
-                        return readedLexem.Substring(0, readedLexem.Length - 1);
+                        var lex = readedLexem.Substring(0, readedLexem.Length - 1);
+                        if (!IsNumberOrFuncOrVar(lex)) throw new Exception();
+                        return lex;
                     }
                 }
             }
-            if (IsLexem(readedLexem))
+            if (IsNumberOrFuncOrVar(readedLexem))
             {
                 newIndex = exp.Length;
                 return readedLexem;
@@ -136,6 +193,11 @@ namespace EParserLib
             newIndex = -1;
             return String.Empty;
         }
+        /// <summary>
+        /// Получение всех лексем
+        /// </summary>
+        /// <param name="exp"></param>
+        /// <returns></returns>
         private List<string> GetLexems(string exp)
         {
             var result = new List<string>();
@@ -148,6 +210,11 @@ namespace EParserLib
             }
             return result;
         }
+        /// <summary>
+        /// Перевод лексем в термы
+        /// </summary>
+        /// <param name="lexems"></param>
+        /// <returns></returns>
         private List<Term> GetTerms(List<string> lexems)
         {
             var result = new List<Term>();
@@ -190,6 +257,9 @@ namespace EParserLib
 
             return result;
         }
+        /// <summary>
+        /// Разбор строки
+        /// </summary>
         private void Parse()
         {
             var lexems = GetLexems(sourceExp);
@@ -244,7 +314,11 @@ namespace EParserLib
 
             tree = result;
         }
-
+        /// <summary>
+        /// Присвоение значений переменной
+        /// </summary>
+        /// <param name="var"></param>
+        /// <returns></returns>
         public double this[string var]
         {
             get
@@ -262,6 +336,9 @@ namespace EParserLib
                     vars.Add(var, value);
             }
         }
+        /// <summary>
+        /// Исходная строка
+        /// </summary>
         public string SourceExpression
         {
             get
@@ -269,13 +346,22 @@ namespace EParserLib
                 return sourceExp;
             }
         }
+        /// <summary>
+        /// Вывод в виде обратной польской нотации
+        /// </summary>
         public string RPN
         {
-            get { return String.Join(" ", tree.Select(x => x.Source)); }
+            get { return String.Join(" ", tree.Select(x => x.Type == TermType.UnarOperation ? "'"+x.Source : x.Source)); }
         }
-
-        public EParser(string exp, EParserSettings s = null) : this()
+        /// <summary>
+        /// Конструктор
+        /// </summary>
+        /// <param name="exp"></param>
+        /// <param name="s"></param>
+        public EParser(string exp, EParserSettings s = null)
         {
+            for (int i = 65; i < 91; i++)
+                variables.Add(((char)i).ToString());
             sourceExp = exp;
             if (s == null)
                 settings = EParserSettings.Default;
@@ -283,6 +369,10 @@ namespace EParserLib
                 settings = s;
             Parse();
         }
+        /// <summary>
+        /// Расчет выражения
+        /// </summary>
+        /// <returns></returns>
         public double Calculate()
         {
             var stack = new Stack<double>();
