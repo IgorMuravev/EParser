@@ -201,7 +201,11 @@ namespace EParserLib
         private List<string> GetLexems(string exp)
         {
             var result = new List<string>();
-            var clearExp = exp.Replace('.', ',').Trim().Replace('\t', '\0').Replace('\n', '\0').Replace(' ', '\0').Replace('\r', '\0').ToUpper();
+            var builder = new StringBuilder(exp);
+            builder = builder.Replace(".", CultureInfo.CurrentCulture.NumberFormat.CurrencyDecimalSeparator);
+            builder = builder.Replace(",", CultureInfo.CurrentCulture.NumberFormat.CurrencyDecimalSeparator);
+            builder = builder.Replace("\t", "").Replace("\n", "").Replace(" ", "").Replace("\r", "");
+            var clearExp = builder.ToString().ToUpper();
             var index = 0;
             while (index != clearExp.Length && index >= 0)
             {
